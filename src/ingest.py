@@ -4,7 +4,7 @@ from PIL import Image
 import os
 
 
-def convert_pdf_to_image(pdf_path: str , dpi: int  = 300) -> List[Image.Image]
+def convert_pdf_to_images(pdf_path: str, dpi: int = 300) -> List[Image.Image]:
 
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF file not found at: {pdf_path}")
