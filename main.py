@@ -5,8 +5,8 @@ from src.database import StudentDatabase
 
 
 def main():
-    qp_pdf_path = "PRV26_Assignment.pdf"
-    answer_pdf_path = "CS25BTECH11005_ASSIGNMENT.pdf"
+    qp_pdf_path = "questions.pdf"
+    answer_pdf_path = "answers.pdf"
 
     if not os.path.exists(qp_pdf_path) or not os.path.exists(answer_pdf_path):
         print(
