@@ -1,0 +1,9 @@
+pdf2image
+pillow
+google-genai
+pydantic
+tenacity
+chromadb
+fastapi
+uvicorn[standard]
+python-multipart

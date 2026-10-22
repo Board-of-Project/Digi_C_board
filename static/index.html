@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam Grader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Schibsted+Grotesk:wght@400;500;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#eef3f9; --sheet:#ffffff; --rule:#d3dfef; --ink:#14223b; --ink-2:#4f607c;
+  --pen:#d4202f; --pen-soft:#fdecee; --ok:#1d6f48; --warn-bg:#fff4dc; --warn:#8a5300;
+  --ui:"Schibsted Grotesk",system-ui,sans-serif;
+  --hand:"Caveat","Segoe Print","Bradley Hand",cursive;
+  --mono:"Spline Sans Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 var(--ui)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+[hidden]{display:none!important}
+
+.top{display:flex;align-items:center;gap:32px;flex-wrap:wrap;padding:12px clamp(16px,4vw,48px);background:var(--sheet);border-bottom:1px solid var(--rule)}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.01em;margin:0}
+.brand b{font-family:var(--hand);font-size:28px;color:var(--pen);font-weight:700;margin-left:4px}
+nav{display:flex;gap:4px}
+nav button{background:none;border:0;padding:8px 14px;border-radius:6px;color:var(--ink-2);cursor:pointer;font-weight:500}
+nav button:hover{background:var(--paper)}
+nav button[aria-current="page"]{color:var(--ink);box-shadow:inset 0 -3px 0 var(--pen);border-radius:0}
+
+main{max-width:1040px;margin:0 auto;padding:32px clamp(16px,4vw,48px) 80px}
+h1{font-size:28px;line-height:1.2;margin:0 0 6px;letter-spacing:-.015em}
+.lede{margin:0 0 28px;color:var(--ink-2);max-width:60ch}
+h2{margin:0;font-size:24px;letter-spacing:-.01em;line-height:1.2}
+
+.banner{padding:10px clamp(16px,4vw,48px);background:var(--warn-bg);color:var(--warn);border-bottom:1px solid #f0d9a4;font-size:15px}
+.banner p{margin:2px 0}
+.banner code{font-family:var(--mono);font-size:13px}
+
+/* Grade form */
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.drop{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:132px;padding:20px;background:var(--sheet);border:2px dashed #b4c5dc;border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--ink);background:#f8fbff}
+.drop input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.drop:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+.drop .t{font-weight:700}
+.drop .h{color:var(--ink-2);font-size:14px}
+.drop.has-file{border-style:solid;border-color:var(--ink)}
+.drop.has-file .h{color:var(--ink);font-family:var(--mono);font-size:13px;word-break:break-all}
+.field{margin-top:20px}
+.field label{display:block;font-weight:700;margin-bottom:6px}
+.field .h{color:var(--ink-2);font-size:14px;margin:0 0 8px}
+textarea{width:100%;min-height:120px;padding:12px 14px;background:var(--sheet);border:1px solid #b4c5dc;border-radius:8px;resize:vertical;line-height:1.5}
+select,input[type=search]{padding:9px 12px;background:var(--sheet);border:1px solid #b4c5dc;border-radius:8px}
+.actions{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:22px}
+.dpi{display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:15px}
+.btn{background:var(--ink);color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer}
+.btn:hover:not(:disabled){background:#0c1729}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:var(--sheet);color:var(--ink);border:1px solid #b4c5dc;padding:8px 16px;font-weight:500}
+.btn.ghost:hover{background:var(--paper)}
+.btn.danger{color:var(--pen);border-color:#e9b3b8}
+.status{display:flex;align-items:center;gap:12px;margin-top:28px;padding:16px 18px;background:var(--sheet);border-left:4px solid var(--ink);border-radius:4px}
+.spin{width:18px;height:18px;border:3px solid var(--rule);border-top-color:var(--ink);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{margin-top:28px;padding:14px 18px;background:var(--pen-soft);border-left:4px solid var(--pen);border-radius:4px;color:#7d1019}
+
+/* Result */
+.result{margin-top:40px}
+.result-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;padding-bottom:24px;border-bottom:2px solid var(--ink)}
+.result-head dl{margin:10px 0 0;display:grid;grid-template-columns:auto 1fr;gap:2px 14px;color:var(--ink-2);font-size:15px}
+.result-head dt{font-weight:500}
+.result-head dd{margin:0;color:var(--ink)}
+.score{position:relative;padding:6px 26px 4px;text-align:center;min-width:170px;margin:8px 14px 0 0}
+.score svg{position:absolute;inset:-10px -16px -6px -16px;width:calc(100% + 32px);height:calc(100% + 16px);overflow:visible}
+.score path{fill:none;stroke:var(--pen);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw .9s .1s ease-out forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.score-num{position:relative;display:block;font-family:var(--hand);font-weight:700;font-size:64px;line-height:1;color:var(--pen)}
+.score-num i{font-style:normal;margin:0 3px;opacity:.7}
+.pct{position:relative;display:block;font-family:var(--hand);font-size:24px;color:var(--pen);line-height:1.1}
+.notice{margin:18px 0 0;padding:10px 14px;background:var(--warn-bg);color:var(--warn);border-radius:6px;font-size:15px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 6px;align-items:center}
+.toolbar .spacer{flex:1}
+
+.q{display:grid;grid-template-columns:112px 1fr;border-bottom:1px solid var(--rule)}
+.q .margin{border-right:2px solid var(--pen);padding:22px 14px 0 0;text-align:right}
+.mark{font-family:var(--hand);font-weight:700;font-size:40px;line-height:1;color:var(--pen);display:inline-block}
+.mark .of{font-size:24px;opacity:.75}
+.mark.full::after{content:"\2713";font-size:30px;margin-left:4px}
+.q .body{padding:20px 0 22px 22px;min-width:0}
+.q h3{margin:0 0 10px;font-size:17px}
+.transcript{margin:0;padding:0 12px;white-space:pre-wrap;word-break:break-word;font:400 14px/28px var(--mono);background:var(--sheet) repeating-linear-gradient(to bottom,transparent 0 27px,var(--rule) 27px 28px) local;border-radius:4px}
+.transcript.empty{color:var(--ink-2);font-style:italic}
+.note{margin:12px 0 0;font-family:var(--hand);font-size:23px;line-height:1.25;color:var(--pen)}
+.over{margin:8px 0 0;font-size:14px;color:var(--warn)}
+
+/* Lists */
+table{width:100%;border-collapse:collapse;background:var(--sheet);border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--rule)}
+th{font-weight:500;color:var(--ink-2);font-size:14px;background:#f7f9fc}
+td.num{font-variant-numeric:tabular-nums}
+.link{background:none;border:0;padding:0;font-weight:700;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:3px}
+.link:hover{text-decoration-color:var(--pen)}
+.table-wrap{overflow-x:auto}
+.empty-state{padding:48px 24px;text-align:center;background:var(--sheet);border-radius:8px;color:var(--ink-2)}
+.empty-state p{margin:0 0 16px}
+.back{margin-bottom:8px}
+.search-row{display:flex;gap:10px;flex-wrap:wrap}
+.search-row input{flex:1;min-width:220px}
+.hits{list-style:none;margin:24px 0 0;padding:0;display:grid;gap:12px}
+.hit{padding:16px 18px;background:var(--sheet);border-radius:8px}
+.hit .row{display:flex;justify-content:space-between;gap:16px;align-items:baseline;flex-wrap:wrap}
+.hit .sc{font-family:var(--hand);font-weight:700;font-size:26px;color:var(--pen)}
+.hit p{margin:6px 0 0;color:var(--ink-2);font-family:var(--mono);font-size:13px;line-height:1.6}
+.hit .rl{color:var(--ink-2);font-size:14px}
+
+@media (max-width:640px){
+  .drops{grid-template-columns:1fr}
+  .q{grid-template-columns:76px 1fr}
+  .q .body{padding-left:14px}
+  .mark{font-size:32px}
+  .score-num{font-size:52px}
+}
+@media (prefers-reduced-motion:reduce){
+  .score path{animation:none;stroke-dashoffset:0}
+  .spin{animation-duration:2s}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 class="brand">Exam Grader<b>&#10003;</b></h1>
+  <nav aria-label="Sections">
+    <button data-view="grade">Grade</button>
+    <button data-view="submissions">Submissions</button>
+    <button data-view="search">Search</button>
+  </nav>
+</header>
+<div id="health" class="banner" hidden></div>
+
+<main>
+  <!-- GRADE -->
+  <section id="view-grade" hidden>
+    <h1>Grade an answer sheet</h1>
+    <p class="lede">Upload the question paper and one student's handwritten answer sheet. Gemini reads both, awards marks per question and saves the result.</p>
+
+    <form id="grade-form">
+      <div class="drops">
+        <label class="drop" id="drop-qp">
+          <input type="file" accept="application/pdf,.pdf">
+          <span class="t">Question paper</span>
+          <span class="h">Drop a PDF here or click to choose one</span>
+        </label>
+        <label class="drop" id="drop-ans">
+          <input type="file" accept="application/pdf,.pdf">
+          <span class="t">Student answer sheet</span>
+          <span class="h">Drop a PDF here or click to choose one</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="scheme">Marking scheme</label>
+        <p class="h">Optional. Gemini decides the marks for each question from the paper, then applies these rules.</p>
+        <textarea id="scheme">General rules:
+- Award partial credit for correct intermediate steps in mathematical or conceptual questions.
+- Deduct up to 0.5 marks for minor spelling or notation errors if the core concept is correct.</textarea>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="grade-btn" type="submit" disabled>Grade answer sheet</button>
+        <label class="dpi">Scan quality
+          <select id="dpi">
+            <option value="150">150 dpi (faster)</option>
+            <option value="200" selected>200 dpi</option>
+            <option value="300">300 dpi (sharpest)</option>
+          </select>
+        </label>
+      </div>
+    </form>
+
+    <div id="grade-status" class="status" hidden role="status"><span class="spin"></span><span id="grade-status-text"></span></div>
+    <div id="grade-error" class="err" hidden role="alert"></div>
+    <div id="grade-result"></div>
+  </section>
+
+  <!-- SUBMISSIONS -->
+  <section id="view-submissions" hidden>
+    <div id="sub-list-wrap">
+      <h1>Submissions</h1>
+      <p class="lede">Every graded answer sheet, newest first.</p>
+      <div id="sub-list"></div>
+    </div>
+    <div id="sub-detail-wrap" hidden>
+      <button class="btn ghost back" id="sub-back" type="button">Back to submissions</button>
+      <div id="sub-detail"></div>
+    </div>
+  </section>
+
+  <!-- SEARCH -->
+  <section id="view-search" hidden>
+    <h1>Search submissions</h1>
+    <p class="lede">Describe what you are looking for, such as a topic, a common mistake or a phrase a student wrote.</p>
+    <form id="search-form" class="search-row">
+      <input id="search-q" type="search" placeholder="e.g. confused conduction with convection" aria-label="Search query" required>
+      <button class="btn" type="submit">Search</button>
+    </form>
+    <div id="search-error" class="err" hidden role="alert"></div>
+    <ul id="search-hits" class="hits"></ul>
+  </section>
+</main>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => { n = Number(n) || 0; return Number.isInteger(n) ? n : +n.toFixed(2); };
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const fmtDate = iso => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let body = null;
+  try { body = await r.json(); } catch {}
+  if (!r.ok) {
+    const d = body && body.detail;
+    throw new Error(typeof d === "string" ? d : d ? JSON.stringify(d) : `Request failed (${r.status})`);
+  }
+  return body;
+}
+
+/* ---------- Views ---------- */
+const views = ["grade", "submissions", "search"];
+function show(name) {
+  if (!views.includes(name)) name = "grade";
+  views.forEach(v => $("#view-" + v).hidden = v !== name);
+  $$("nav button").forEach(b => {
+    if (b.dataset.view === name) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
+  if (name === "submissions") {
+    if (pendingOpen) { const id = pendingOpen; pendingOpen = null; openSubmission(id); }
+    else { showList(); loadSubmissions(); }
+  }
+}
+let pendingOpen = null;
+$$("nav button").forEach(b => b.addEventListener("click", () => { location.hash = b.dataset.view; }));
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+
+/* ---------- Health ---------- */
+(async function health() {
+  try {
+    const h = await api("/api/health");
+    const msgs = [];
+    if (!h.gemini_key) msgs.push("<p>No Gemini API key found. Set <code>GEMINI_API_KEY</code> in the terminal that runs the server, then restart it.</p>");
+    if (!h.poppler) msgs.push("<p>Poppler was not found on PATH, so PDFs cannot be converted. Install it (see the README) and restart the server.</p>");
+    if (msgs.length) { const b = $("#health"); b.innerHTML = msgs.join(""); b.hidden = false; }
+  } catch {}
+})();
+
+/* ---------- Grade ---------- */
+const files = { qp: null, ans: null };
+const gradeBtn = $("#grade-btn");
+const updateBtn = () => { gradeBtn.disabled = !(files.qp && files.ans); };
+
+function bindDrop(id, key) {
+  const zone = $("#" + id), input = $("input", zone), hint = $(".h", zone);
+  const set = f => {
+    if (!f) return;
+    if (!/\.pdf$/i.test(f.name)) { showGradeError("Only PDF files are supported."); return; }
+    hideGradeError();
+    files[key] = f;
+    hint.textContent = `${f.name} (${fmtSize(f.size)})`;
+    zone.classList.add("has-file");
+    updateBtn();
+  };
+  input.addEventListener("change", () => set(input.files[0]));
+  ["dragenter", "dragover"].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove("over"); }));
+  zone.addEventListener("drop", e => set(e.dataTransfer.files[0]));
+}
+bindDrop("drop-qp", "qp");
+bindDrop("drop-ans", "ans");
+
+const showGradeError = m => { const e = $("#grade-error"); e.textContent = m; e.hidden = false; };
+const hideGradeError = () => { $("#grade-error").hidden = true; };
+
+$("#grade-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!files.qp || !files.ans) return;
+  hideGradeError();
+  $("#grade-result").innerHTML = "";
+  const fd = new FormData();
+  fd.append("question_paper", files.qp);
+  fd.append("answer_sheet", files.ans);
+  fd.append("marking_scheme", $("#scheme").value);
+  fd.append("dpi", $("#dpi").value);
+
+  gradeBtn.disabled = true;
+  const status = $("#grade-status"), text = $("#grade-status-text");
+  status.hidden = false;
+  const t0 = Date.now();
+  const tick = () => { text.textContent = `Grading in progress, ${Math.round((Date.now() - t0) / 1000)} s elapsed. Handwriting can take a minute or more to read.`; };
+  tick();
+  const timer = setInterval(tick, 1000);
+  try {
+    const data = await api("/api/grade", { method: "POST", body: fd });
+    renderResult($("#grade-result"), data);
+  } catch (err) {
+    showGradeError(err.message);
+  } finally {
+    clearInterval(timer);
+    status.hidden = true;
+    updateBtn();
+  }
+});
+
+/* ---------- Result renderer ---------- */
+const CIRCLE = "M30 70 C8 50 22 14 80 8 C140 2 206 14 210 46 C214 78 150 90 100 88 C56 86 20 74 26 40 C28 26 44 16 60 12";
+
+function totalsOf(d) {
+  const has = (d.evaluations || []).length > 0;
+  return { total: has ? d.computed_total : d.total_marks_obtained, max: has ? d.computed_max : d.total_max_marks, has };
+}
+
+function toCsv(d) {
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const { total, max } = totalsOf(d);
+  const rows = [["student_name", "roll_number", "question", "transcribed_answer", "marks_awarded", "max_marks", "feedback"]];
+  (d.evaluations || []).forEach(e => rows.push([d.student_name, d.roll_number, e.question_number, e.transcribed_answer, e.marks_awarded, e.max_marks, e.feedback]));
+  rows.push([d.student_name, d.roll_number, "TOTAL", "", total, max, ""]);
+  return "\ufeff" + rows.map(r => r.map(q).join(",")).join("\r\n");
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function renderResult(el, d, opts = {}) {
+  const evals = d.evaluations || [];
+  const { total, max, has } = totalsOf(d);
+  const pct = max > 0 ? Math.round(total / max * 100) : 0;
+  const base = (d.roll_number || d.student_name || "submission").toString().replace(/[^\w.-]+/g, "_");
+
+  const questions = evals.map(e => {
+    const full = e.max_marks > 0 && e.marks_awarded >= e.max_marks;
+    const over = e.marks_awarded > e.max_marks;
+    const ans = (e.transcribed_answer || "").trim();
+    return `
+    <article class="q">
+      <div class="margin"><span class="mark${full ? " full" : ""}">${fmt(e.marks_awarded)}<span class="of">/${fmt(e.max_marks)}</span></span></div>
+      <div class="body">
+        <h3>Question ${esc(e.question_number)}</h3>
+        <pre class="transcript${ans ? "" : " empty"}">${ans ? esc(ans) : "No answer found."}</pre>
+        ${e.feedback ? `<p class="note">${esc(e.feedback)}</p>` : ""}
+        ${over ? `<p class="over">Awarded marks are higher than the maximum for this question. Check this one.</p>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+
+  el.innerHTML = `
+  <section class="result">
+    <header class="result-head">
+      <div>
+        <h2>${esc(d.student_name || "Name not found")}</h2>
+        <dl>
+          <dt>Roll number</dt><dd>${esc(d.roll_number || "Not found")}</dd>
+          ${d.graded_at ? `<dt>Graded</dt><dd>${esc(fmtDate(d.graded_at))}</dd>` : ""}
+          ${d.id ? `<dt>Saved as</dt><dd>${esc(d.id)}</dd>` : ""}
+        </dl>
+      </div>
+      <div class="score" role="img" aria-label="Score ${fmt(total)} out of ${fmt(max)}, ${pct} percent">
+        <svg viewBox="0 0 220 96" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="${CIRCLE}"/></svg>
+        <span class="score-num">${fmt(total)}<i>/</i>${fmt(max)}</span>
+        <span class="pct">${pct}%</span>
+      </div>
+    </header>
+    ${has && !d.totals_match ? `<p class="notice">Gemini reported ${fmt(d.total_marks_obtained)} / ${fmt(d.total_max_marks)}, but the question marks add up to ${fmt(total)} / ${fmt(max)}. The score above is the sum of the question marks.</p>` : ""}
+    ${!has ? `<p class="notice">This submission was saved before per-question detail was stored, so only the totals are available.</p>` : ""}
+    <div class="toolbar">
+      <button class="btn ghost" type="button" data-act="csv">Download CSV</button>
+      <button class="btn ghost" type="button" data-act="json">Download JSON</button>
+      <span class="spacer"></span>
+      ${opts.onDelete ? `<button class="btn ghost danger" type="button" data-act="delete">Delete submission</button>` : ""}
+    </div>
+    <div>${questions}</div>
+  </section>`;
+
+  $('[data-act="csv"]', el).addEventListener("click", () => download(base + ".csv", toCsv(d), "text/csv;charset=utf-8"));
+  $('[data-act="json"]', el).addEventListener("click", () => download(base + ".json", JSON.stringify(d, null, 2), "application/json"));
+  if (opts.onDelete) $('[data-act="delete"]', el).addEventListener("click", opts.onDelete);
+}
+
+/* ---------- Submissions ---------- */
+function showList() { $("#sub-list-wrap").hidden = false; $("#sub-detail-wrap").hidden = true; }
+
+async function loadSubmissions() {
+  const box = $("#sub-list");
+  box.innerHTML = `<p class="lede">Loading…</p>`;
+  try {
+    const rows = await api("/api/submissions");
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty-state"><p>No graded submissions yet.</p><button class="btn" type="button" id="go-grade">Grade an answer sheet</button></div>`;
+      $("#go-grade").addEventListener("click", () => { location.hash = "grade"; });
+      return;
+    }
+    box.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Student</th><th>Roll number</th><th>Score</th><th>Graded</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td><button class="link" data-id="${esc(r.id)}">${esc(r.student_name)}</button></td>
+        <td>${esc(r.roll_number)}</td>
+        <td class="num">${fmt(r.total_marks)} / ${fmt(r.max_marks)}</td>
+        <td>${esc(fmtDate(r.graded_at)) || "Earlier"}</td></tr>`).join("")}</tbody></table></div>`;
+    $$(".link", box).forEach(b => b.addEventListener("click", () => openSubmission(b.dataset.id)));
+  } catch (err) {
+    box.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+  }
+}
+
+async function openSubmission(id) {
+  try {
+    const d = await api("/api/submissions/" + encodeURIComponent(id));
+    $("#sub-list-wrap").hidden = true;
+    $("#sub-detail-wrap").hidden = false;
+    renderResult($("#sub-detail"), d, {
+      onDelete: async () => {
+        if (!confirm(`Delete the submission for ${d.student_name || id}? This cannot be undone.`)) return;
+        try { await api("/api/submissions/" + encodeURIComponent(id), { method: "DELETE" }); showList(); loadSubmissions(); }
+        catch (err) { alert(err.message); }
+      }
+    });
+    window.scrollTo({ top: 0 });
+  } catch (err) { alert(err.message); }
+}
+$("#sub-back").addEventListener("click", () => { showList(); loadSubmissions(); });
+
+/* ---------- Search ---------- */
+$("#search-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("#search-q").value.trim();
+  const list = $("#search-hits"), err = $("#search-error");
+  err.hidden = true;
+  if (!q) return;
+  list.innerHTML = `<li class="lede">Searching…</li>`;
+  try {
+    const hits = await api("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q, n: 5 }) });
+    if (!hits.length) { list.innerHTML = `<li class="empty-state"><p>Nothing to search yet. Grade a submission first.</p></li>`; return; }
+    list.innerHTML = hits.map((h, i) => `
+      <li class="hit">
+        <div class="row">
+          <button class="link" data-id="${esc(h.id)}">${esc(h.student_name)} (roll ${esc(h.roll_number)})</button>
+          <span class="sc">${fmt(h.total_marks)} / ${fmt(h.max_marks)}</span>
+        </div>
+        <span class="rl">Match ${i + 1} of ${hits.length}, closest first</span>
+        <p>${esc(h.excerpt)}${h.excerpt.length >= 260 ? "…" : ""}</p>
+      </li>`).join("");
+    $$(".link", list).forEach(b => b.addEventListener("click", () => {
+      pendingOpen = b.dataset.id;
+      if (location.hash.slice(1) === "submissions") show("submissions"); else location.hash = "submissions";
+    }));
+  } catch (ex) {
+    list.innerHTML = "";
+    err.textContent = ex.message; err.hidden = false;
+  }
+});
+
+show(location.hash.slice(1));
+</script>
+</body>
+</html>
