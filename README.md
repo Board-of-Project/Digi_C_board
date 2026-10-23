@@ -1,124 +1,76 @@
 # AI Exam Grader
 
-An AI-powered grading pipeline. It takes a question paper PDF and a student's handwritten answer sheet PDF, uses Gemini to read, transcribe and grade the answers, and stores each result in a ChromaDB vector database for later semantic search.
+Grades handwritten answer sheets with Gemini. Upload a question paper PDF and a student's answer sheet PDF; the app transcribes each answer, awards marks, writes feedback, and stores the result in ChromaDB for review and semantic search. Use it through the web app or the original command-line script.
 
-## How it works
-
-1. Convert the question paper PDF to images (300 DPI).
-2. Convert the student's answer sheet PDF to images (300 DPI).
-3. Send both image sets to Gemini with a general marking scheme. Gemini decides the marks per question, transcribes each handwritten answer, awards marks and writes feedback.
-4. Print the results: student name, roll number, total marks, and per-question transcription, marks and feedback.
-5. Store the submission in ChromaDB, keyed by roll number (falls back to `student_001`).
-
-## Project structure
+## Structure
 
 ```
 .
-├── main.py            # Entry point: runs the full pipeline
+├── main.py            # CLI entry point
+├── server.py          # FastAPI server and JSON API
+├── static/index.html  # Web UI (single file, no build step)
 ├── src/
 │   ├── ingest.py      # PDF -> images (pdf2image)
-│   ├── ai.py          # Gemini evaluation with structured output and retries
-│   ├── models.py      # Pydantic schemas for evaluation results
-│   └── database.py    # ChromaDB storage and semantic search
-└── README.md
+│   ├── ai.py          # Gemini grading with structured output and retries
+│   ├── models.py      # Pydantic schemas
+│   └── database.py    # ChromaDB storage, listing, search
+└── requirements.txt
 ```
 
-## Requirements
+## Setup
 
-- Python 3.10+
-- [Poppler](https://poppler.freedesktop.org/) (required by `pdf2image`)
-  - macOS: `brew install poppler`
-  - Ubuntu/Debian: `sudo apt install poppler-utils`
-  - Windows: install Poppler and add its `bin` folder to `PATH`
-- A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
-
-## Installation
+Requires Python 3.10+, [Poppler](https://poppler.freedesktop.org/) (`brew install poppler` or `sudo apt install poppler-utils`; on Windows add its `bin` folder to `PATH`), and a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
 
 ```bash
-git clone <your-repo-url>
-cd <your-repo-folder>
 python -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install pdf2image pillow google-genai pydantic tenacity chromadb
-```
-
-## Configuration
-
-Set your Gemini API key as an environment variable (the Google GenAI client reads it automatically):
-
-```bash
+pip install -r requirements.txt
 export GEMINI_API_KEY="your-api-key"
 ```
 
 ## Usage
 
-1. Place the question paper and the student's answer sheet PDFs in the project root.
-2. Update the file paths in `main.py`:
-
-```python
-   qp_pdf_path = "questions.pdf"
-   answer_pdf_path = "answers.pdf"
-```
-
-3. Run:
+**Web app**
 
 ```bash
-   python main.py
+uvicorn server:app --reload
 ```
 
-Example output:
+Open http://127.0.0.1:8000.
 
-```
---- Evaluation Results ---
-Student Name: ...
-Roll Number: ...
-Total Marks: 18 / 25
+- **Grade:** upload both PDFs, edit the marking scheme, choose a scan quality, and download the result as CSV or JSON.
+- **Submissions:** browse, reopen or delete past results.
+- **Search:** semantic search across stored submissions.
 
-Question 1:
-  Transcribed: ...
-  Marks: 4 / 5
-  Feedback: ...
-```
+The page flags results where Gemini's total doesn't match the sum of the question marks, or where a question is awarded more than its maximum.
 
-## Modules
+**Command line:** set `qp_pdf_path` and `answer_pdf_path` in `main.py`, then run `python main.py`.
 
-### `src/ingest.py`
-`convert_pdf_to_images(pdf_path, dpi=300)` converts a PDF into a list of PIL images. Raises `FileNotFoundError` if the file does not exist.
+## API
 
-### `src/ai.py`
-`evaluate_with_question_paper_pdf(question_paper_images, answer_sheet_images, marking_scheme=None)` sends the images and prompt to `gemini-3.5-flash-lite` (temperature 0.1) and requests JSON matching the `StudentSubmission` schema. Retries up to 5 times with exponential backoff on server errors such as 503.
+Interactive docs are served at `/docs`.
 
-### `src/models.py`
-- `QuestionEvaluation`: question number, transcribed answer, marks awarded, max marks, feedback.
-- `StudentSubmission`: student name, roll number, list of evaluations, total obtained, total max.
-
-### `src/database.py`
-`StudentDatabase` wraps a persistent ChromaDB collection (`student_submissions`, stored in `./chroma_db`).
-- `store_submission(submission, student_id)`: flattens a submission into one document with metadata and upserts it.
-- `query_submissions(query_text, n_results=3)`: semantic search across stored submissions.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Check API key, Poppler, and stored count |
+| `POST` | `/api/grade` | Form fields `question_paper`, `answer_sheet`, optional `marking_scheme`, `dpi` (100 to 300) |
+| `GET` | `/api/submissions` | List submissions |
+| `GET` / `DELETE` | `/api/submissions/{id}` | Fetch or delete one |
+| `POST` | `/api/search` | `{"query": "...", "n": 5}` |
 
 ## Customizing the marking scheme
 
-Edit the `marking_scheme` string in `main.py`. The current default awards partial credit for correct intermediate steps and deducts up to 0.5 marks for minor spelling or notation errors.
+Edit the box on the Grade page, or the `marking_scheme` string in `main.py` for the CLI.
 
 ## Known limitations
 
-- File paths and marking scheme are hardcoded; there is no CLI or batch mode.
-- There is no answer key, so Gemini decides the marks distribution itself and grading may vary between runs.
-- Totals returned by the model are not verified against the sum of per-question marks.
-- Only `ServerError` is retried; rate limits and other API errors are not handled.
-- Each submission is stored as a single document, so semantic search is coarse.
+- No answer key: Gemini sets the marks distribution, so grading can vary between runs.
+- Totals are checked only in the web app.
+- One sheet at a time; re-grading a roll number overwrites it.
+- No login: run on a trusted machine or network only.
+- Only server errors are retried automatically.
+- Each submission is one ChromaDB document, so search is coarse.
 
 ## Roadmap
 
-- Accept file paths via CLI arguments
-- Batch grading for multiple students
-- Support a fixed rubric or answer key
-- Validate totals against per-question marks
-- Per-question documents in ChromaDB
-- Report export and a teacher-facing UI
-- Tests
-
-## License
-
-Add a license of your choice.
+Batch grading, fixed rubric or answer key, per-question search documents, editable marks in the UI, scanned pages beside the transcription, authentication, tests.
