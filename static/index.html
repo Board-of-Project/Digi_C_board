@@ -115,6 +115,21 @@ td.num{font-variant-numeric:tabular-nums}
 .hit p{margin:6px 0 0;color:var(--ink-2);font-family:var(--mono);font-size:13px;line-height:1.6}
 .hit .rl{color:var(--ink-2);font-size:14px}
 
+/* Batch queue */
+#batch{margin-top:28px}
+.batch-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.batch-head .spacer{flex:1}
+.batch{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.brow{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;align-items:center;padding:10px 14px;background:var(--sheet);border-radius:8px}
+.brow .bn{font-weight:500;min-width:0;word-break:break-all}
+.brow .bn small{color:var(--ink-2);font-weight:400;margin-left:6px}
+.brow .chip{margin:0}
+.brow .bmsg{grid-column:1 / 4;font-size:14px;color:var(--ink-2)}
+.brow .bmsg.bad{color:#7d1019}
+.bbtns .btn.ghost{padding:3px 10px;font-size:14px}
+.batch-result{margin-top:8px}
+.batch-result + .batch-result{margin-top:48px}
+
 /* Mistakes */
 .chip{display:inline-block;padding:1px 10px;border-radius:99px;font-size:13px;font-weight:500;background:var(--paper);border:1px solid var(--rule);color:var(--ink-2);vertical-align:middle;margin-left:8px}
 .chip.st-correct{background:#e4f4ec;border-color:#b6dec8;color:var(--ok)}
@@ -197,7 +212,7 @@ details.expected p{margin:6px 0 0;white-space:pre-wrap}
   <!-- GRADE -->
   <section id="view-grade" hidden>
     <h1>Grade an answer sheet</h1>
-    <p class="lede">Upload the question paper and one student's handwritten answer sheet. Gemini reads both, awards marks per question and saves the result.</p>
+    <p class="lede">Upload the question paper and one or more handwritten answer sheets. Gemini reads them, awards marks per question and saves each result. Several sheets are graded one at a time, in the order listed.</p>
     <p class="keyline" id="keyline"></p>
 
     <form id="grade-form">
@@ -208,9 +223,9 @@ details.expected p{margin:6px 0 0;white-space:pre-wrap}
           <span class="h">Drop a PDF here or click to choose one</span>
         </label>
         <label class="drop" id="drop-ans">
-          <input type="file" accept="application/pdf,.pdf">
-          <span class="t">Student answer sheet</span>
-          <span class="h">Drop a PDF here or click to choose one</span>
+          <input type="file" accept="application/pdf,.pdf" multiple>
+          <span class="t">Student answer sheets</span>
+          <span class="h">Drop one or more PDFs here or click to choose</span>
         </label>
       </div>
 
@@ -223,7 +238,8 @@ details.expected p{margin:6px 0 0;white-space:pre-wrap}
       </div>
 
       <div class="actions">
-        <button class="btn" id="grade-btn" type="submit" disabled>Grade answer sheet</button>
+        <button class="btn" id="grade-btn" type="submit" disabled>Grade answer sheets</button>
+        <button class="btn ghost" id="stop-btn" type="button" hidden>Stop after this sheet</button>
         <label class="dpi">Scan quality
           <select id="dpi">
             <option value="150">150 dpi (faster)</option>
@@ -234,9 +250,18 @@ details.expected p{margin:6px 0 0;white-space:pre-wrap}
       </div>
     </form>
 
+    <div id="batch" hidden>
+      <div class="batch-head">
+        <h2>Queue</h2><span id="batch-count" class="fine"></span><span class="spacer"></span>
+        <button class="btn ghost" id="retry-btn" type="button" hidden>Retry failed</button>
+        <button class="btn ghost" id="clear-btn" type="button">Clear all</button>
+      </div>
+      <ul id="batch-list" class="batch"></ul>
+    </div>
+
     <div id="grade-status" class="status" hidden role="status"><span class="spin"></span><span id="grade-status-text"></span></div>
     <div id="grade-error" class="err" hidden role="alert"></div>
-    <p id="grade-keynote" class="notice" hidden></p>
+    <div id="batch-summary"></div>
     <div id="grade-result"></div>
   </section>
 
@@ -296,6 +321,7 @@ async function api(path, opts) {
     const d = body && body.detail;
     const err = new Error(typeof d === "string" ? d : d && d.message ? d.message : d ? JSON.stringify(d) : `Request failed (${r.status})`);
     if (d && typeof d === "object" && d.key_report) err.report = d.key_report;
+    err.status = r.status;
     throw err;
   }
   return body;
@@ -422,68 +448,186 @@ function keyNote(report) {
   } catch {}
 })();
 
-/* ---------- Grade ---------- */
-const files = { qp: null, ans: null };
+/* ---------- Grade (one or many answer sheets) ---------- */
+const files = { qp: null };
+let queue = [];              // [{ file, status: queued|grading|done|failed, msg, data }]
+let running = false, stopFlag = false;
 const gradeBtn = $("#grade-btn");
-const updateBtn = () => { gradeBtn.disabled = !(files.qp && files.ans); };
+const queuedCount = () => queue.filter(i => i.status === "queued").length;
+const ANS_HINT = "Drop one or more PDFs here or click to choose";
 
-function bindDrop(id, key) {
+function updateBtn() {
+  const n = queuedCount();
+  gradeBtn.textContent = running ? "Grading…" : n ? `Grade ${n} answer sheet${n > 1 ? "s" : ""}` : "Grade answer sheets";
+  gradeBtn.disabled = running || !files.qp || n === 0;
+  $("#stop-btn").hidden = !running;
+  $("#retry-btn").hidden = running || !queue.some(i => i.status === "failed");
+  $("#clear-btn").disabled = running;
+  $("#batch").hidden = queue.length === 0;
+  const done = queue.filter(i => i.status === "done").length;
+  $("#batch-count").textContent = queue.length ? `${done} of ${queue.length} graded` : "";
+}
+
+function syncAnsHint() {
+  const zone = $("#drop-ans"), hint = $(".h", zone);
+  if (!queue.length) { hint.textContent = ANS_HINT; zone.classList.remove("has-file"); return; }
+  hint.textContent = `${queue.length} answer sheet${queue.length > 1 ? "s" : ""} selected. Drop or choose more to add.`;
+  zone.classList.add("has-file");
+}
+
+function bindDrop(id, key, multi) {
   const zone = $("#" + id), input = $("input", zone), hint = $(".h", zone);
-  const set = f => {
-    if (!f) return;
-    if (!/\.pdf$/i.test(f.name)) { showGradeError("Only PDF files are supported."); return; }
+  const set = list => {
+    list = [...list];
+    if (!list.length || running) return;
+    const pdfs = list.filter(f => /\.pdf$/i.test(f.name));
+    if (!pdfs.length) { showGradeError("Only PDF files are supported."); return; }
     hideGradeError();
-    files[key] = f;
-    hint.textContent = `${f.name} (${fmtSize(f.size)})`;
-    zone.classList.add("has-file");
-    updateBtn();
+    if (pdfs.length < list.length) showGradeError(`Skipped ${list.length - pdfs.length} file(s) that are not PDFs.`);
+    if (multi) {
+      pdfs.forEach(f => {
+        if (!queue.some(q => q.file.name === f.name && q.file.size === f.size)) queue.push({ file: f, status: "queued", msg: "", data: null });
+      });
+      syncAnsHint();
+    } else {
+      files[key] = pdfs[0];
+      hint.textContent = `${pdfs[0].name} (${fmtSize(pdfs[0].size)})`;
+      zone.classList.add("has-file");
+    }
+    renderQueue(); updateBtn();
   };
-  input.addEventListener("change", () => set(input.files[0]));
+  input.addEventListener("change", () => { set(input.files); input.value = ""; });
   ["dragenter", "dragover"].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove("over"); }));
-  zone.addEventListener("drop", e => set(e.dataTransfer.files[0]));
+  zone.addEventListener("drop", e => set(multi ? e.dataTransfer.files : [...e.dataTransfer.files].slice(0, 1)));
 }
-bindDrop("drop-qp", "qp");
-bindDrop("drop-ans", "ans");
+bindDrop("drop-qp", "qp", false);
+bindDrop("drop-ans", "ans", true);
 
 const showGradeError = m => { const e = $("#grade-error"); e.textContent = m; e.hidden = false; };
 const hideGradeError = () => { $("#grade-error").hidden = true; };
 
-$("#grade-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  if (!files.qp || !files.ans) return;
-  hideGradeError();
-  $("#grade-result").innerHTML = "";
-  const fd = new FormData();
-  fd.append("question_paper", files.qp);
-  fd.append("answer_sheet", files.ans);
-  fd.append("marking_scheme", $("#scheme").value);
-  fd.append("dpi", $("#dpi").value);
-  fd.append("api_keys", JSON.stringify(keys.map(k => k.key)));
-  $("#grade-keynote").hidden = true;
+function renderQueue() {
+  const label = it => it.status === "done" ? (t => `Done, ${fmt(t.total)} / ${fmt(t.max)}`)(totalsOf(it.data))
+    : { queued: "Queued", grading: "Grading…", failed: "Failed" }[it.status];
+  const cls = { done: " st-correct", failed: " st-incorrect", grading: " st-partially_correct", queued: "" };
+  $("#batch-list").innerHTML = queue.map((it, i) => `
+    <li class="brow" data-i="${i}">
+      <span class="bn">${i + 1}. ${esc(it.file.name)}<small>${fmtSize(it.file.size)}</small></span>
+      <span class="chip${cls[it.status]}">${esc(label(it))}</span>
+      <span class="bbtns">${!running && (it.status === "queued" || it.status === "failed") ? `<button class="btn ghost" type="button" data-a="remove" aria-label="Remove ${esc(it.file.name)}">Remove</button>` : ""}</span>
+      ${it.msg ? `<span class="bmsg${it.status === "failed" ? " bad" : ""}">${esc(it.msg)}</span>` : ""}
+    </li>`).join("");
+}
 
-  gradeBtn.disabled = true;
+$("#batch-list").addEventListener("click", e => {
+  const b = e.target.closest("button[data-a=remove]");
+  if (!b || running) return;
+  queue.splice(+b.closest(".brow").dataset.i, 1);
+  syncAnsHint(); renderQueue(); updateBtn(); renderBatchSummary();
+});
+$("#retry-btn").addEventListener("click", () => {
+  queue.forEach(i => { if (i.status === "failed") { i.status = "queued"; i.msg = ""; } });
+  renderQueue(); updateBtn();
+});
+$("#clear-btn").addEventListener("click", () => {
+  if (running) return;
+  queue = [];
+  $("#grade-result").innerHTML = ""; $("#batch-summary").innerHTML = "";
+  hideGradeError(); syncAnsHint(); renderQueue(); updateBtn();
+});
+$("#stop-btn").addEventListener("click", () => { stopFlag = true; $("#stop-btn").disabled = true; $("#stop-btn").textContent = "Stopping after this sheet…"; });
+
+/* Errors that mean the keys are the problem: stop the batch instead of failing every sheet. */
+const keysExhausted = err => err.report !== undefined && [400, 429, 503].includes(err.status);
+
+$("#grade-form").addEventListener("submit", e => { e.preventDefault(); runBatch(); });
+
+async function runBatch() {
+  if (running || !files.qp || !queuedCount()) return;
+  running = true; stopFlag = false;
+  $("#stop-btn").disabled = false; $("#stop-btn").textContent = "Stop after this sheet";
+  hideGradeError();
+  renderQueue(); updateBtn();
   const status = $("#grade-status"), text = $("#grade-status-text");
   status.hidden = false;
-  const t0 = Date.now();
-  const tick = () => { text.textContent = `Grading in progress, ${Math.round((Date.now() - t0) / 1000)} s elapsed. Handwriting can take a minute or more to read.`; };
-  tick();
-  const timer = setInterval(tick, 1000);
-  try {
-    const data = await api("/api/grade", { method: "POST", body: fd });
-    applyKeyReport(data.key_report);
-    const note = keyNote(data.key_report);
-    if (note) { const n = $("#grade-keynote"); n.textContent = note; n.hidden = false; }
-    renderResult($("#grade-result"), data);
-  } catch (err) {
-    if (err.report) applyKeyReport(err.report);
-    showGradeError(err.message + (err.report && err.report.length ? " " + err.report.map(r => `${r.label}: ${r.status}`).join(", ") + "." : ""));
-  } finally {
-    clearInterval(timer);
-    status.hidden = true;
-    updateBtn();
+  const total = queue.length;
+
+  for (let i = 0; i < queue.length; i++) {
+    const it = queue[i];
+    if (it.status !== "queued") continue;
+    if (stopFlag) break;
+    it.status = "grading"; it.msg = "";
+    renderQueue();
+    const t0 = Date.now();
+    const tick = () => { text.textContent = `Grading sheet ${i + 1} of ${total} (${it.file.name}), ${Math.round((Date.now() - t0) / 1000)} s elapsed. Handwriting can take a minute or more to read.`; };
+    tick();
+    const timer = setInterval(tick, 1000);
+    try {
+      const fd = new FormData();
+      fd.append("question_paper", files.qp);
+      fd.append("answer_sheet", it.file);
+      fd.append("marking_scheme", $("#scheme").value);
+      fd.append("dpi", $("#dpi").value);
+      fd.append("api_keys", JSON.stringify(keys.map(k => k.key)));
+      const data = await api("/api/grade", { method: "POST", body: fd });
+      applyKeyReport(data.key_report);
+      it.status = "done"; it.data = data; it.msg = keyNote(data.key_report);
+      const div = document.createElement("div");
+      div.className = "batch-result"; div.id = "res-" + i;
+      $("#grade-result").append(div);
+      renderResult(div, data);
+    } catch (err) {
+      if (err.report) applyKeyReport(err.report);
+      if (keysExhausted(err)) {
+        it.status = "queued"; it.msg = "";
+        showGradeError(err.message + (err.report && err.report.length ? " " + err.report.map(r => `${r.label}: ${r.status}`).join(", ") + "." : "") + " The remaining sheets are still queued. Add or fix a key, then press the grade button to continue.");
+        clearInterval(timer);
+        break;
+      }
+      it.status = "failed"; it.msg = err.message;
+    } finally {
+      clearInterval(timer);
+    }
+    renderQueue(); renderBatchSummary(); updateBtn();
   }
-});
+
+  running = false;
+  status.hidden = true;
+  renderQueue(); renderBatchSummary(); updateBtn();
+}
+
+function renderBatchSummary() {
+  const el = $("#batch-summary");
+  const done = queue.map((it, i) => ({ it, i })).filter(x => x.it.status === "done");
+  if (queue.length < 2 || !done.length) { el.innerHTML = ""; return; }
+  const rows = done.map(({ it, i }) => {
+    const t = totalsOf(it.data), pct = t.max > 0 ? Math.round(t.total / t.max * 100) : 0;
+    return { i, it, t, pct };
+  });
+  const avg = Math.round(rows.reduce((s, r) => s + r.pct, 0) / rows.length);
+  const ids = done.map(x => x.it.data.id);
+  const dups = [...new Set(ids.filter((v, k) => ids.indexOf(v) !== k))];
+  el.innerHTML = `<section class="result">
+    <h2>Batch summary</h2>
+    <p class="lede" style="margin:6px 0 14px">${rows.length} of ${queue.length} sheets graded. Class average ${avg}%.</p>
+    ${dups.length ? `<p class="notice">More than one sheet has the roll number or id ${esc(dups.join(", "))}. Saved submissions are keyed by roll number, so the later sheet replaced the earlier one in the Submissions tab.</p>` : ""}
+    <div class="table-wrap"><table>
+      <thead><tr><th>File</th><th>Student</th><th>Roll number</th><th>Score</th><th>%</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td>${esc(r.it.file.name)}</td>
+        <td><button class="link" type="button" data-i="${r.i}">${esc(r.it.data.student_name || "Name not found")}</button></td>
+        <td>${esc(r.it.data.roll_number || "Not found")}</td>
+        <td class="num">${fmt(r.t.total)} / ${fmt(r.t.max)}</td>
+        <td class="num">${r.pct}%</td></tr>`).join("")}</tbody></table></div>
+    <div class="toolbar"><button class="btn ghost" type="button" id="csv-all">Download all as CSV</button></div>
+  </section>`;
+  $$(".link", el).forEach(b => b.addEventListener("click", () => {
+    const t = document.getElementById("res-" + b.dataset.i);
+    if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  $("#csv-all", el).addEventListener("click", () => download("batch_results.csv", toCsvAll(done.map(x => x.it.data)), "text/csv;charset=utf-8"));
+}
 
 /* ---------- Result renderer ---------- */
 const CIRCLE = "M30 70 C8 50 22 14 80 8 C140 2 206 14 210 46 C214 78 150 90 100 88 C56 86 20 74 26 40 C28 26 44 16 60 12";
@@ -493,10 +637,10 @@ function totalsOf(d) {
   return { total: has ? d.computed_total : d.total_marks_obtained, max: has ? d.computed_max : d.total_max_marks, has };
 }
 
-function toCsv(d) {
-  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+const CSV_HEAD = ["student_name", "roll_number", "question", "status", "transcribed_answer", "expected_answer", "marks_awarded", "max_marks", "mistakes", "topics_to_revise", "feedback"];
+function csvRows(d) {
   const { total, max } = totalsOf(d);
-  const rows = [["student_name", "roll_number", "question", "status", "transcribed_answer", "expected_answer", "marks_awarded", "max_marks", "mistakes", "topics_to_revise", "feedback"]];
+  const rows = [];
   (d.evaluations || []).forEach(e => {
     const ms = e.mistakes || [];
     rows.push([d.student_name, d.roll_number, e.question_number, e.status, e.transcribed_answer, e.expected_answer, e.marks_awarded, e.max_marks,
@@ -504,8 +648,14 @@ function toCsv(d) {
       [...new Set(ms.map(m => m.topic_to_revise))].join("; "), e.feedback]);
   });
   rows.push([d.student_name, d.roll_number, "TOTAL", "", "", "", total, max, "", "", d.overall_summary || ""]);
+  return rows;
+}
+function csvText(rows) {
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   return "\ufeff" + rows.map(r => r.map(q).join(",")).join("\r\n");
 }
+const toCsv = d => csvText([CSV_HEAD, ...csvRows(d)]);
+const toCsvAll = list => csvText([CSV_HEAD, ...list.flatMap(csvRows)]);
 
 function download(name, text, type) {
   const a = document.createElement("a");

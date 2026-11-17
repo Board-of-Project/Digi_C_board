@@ -1,6 +1,5 @@
 # AI Exam Grader
 
-<<<<<<< HEAD
 An AI-powered grading tool. It takes a question paper PDF and a student's handwritten answer sheet PDF, uses Gemini to read, transcribe and grade the answers, explains every mistake in detail, and stores each result in a ChromaDB vector database for later semantic search.
 
 It comes with a web app (FastAPI) and a command-line script. A Streamlit version is also included.
@@ -8,6 +7,7 @@ It comes with a web app (FastAPI) and a command-line script. A Streamlit version
 ## Features
 
 - Handwriting transcription and grading against the question paper and an optional marking scheme.
+- **Batch grading.** Upload several answer sheet PDFs at once. They are graded one by one against the same question paper, with a live queue and a batch summary.
 - **Detailed mistake descriptions** for every question: what the student wrote, why it is wrong, the correct approach, marks lost, and the topic to revise.
 - **Multiple API keys with automatic fallback.** Add several Gemini keys in the UI. When one reaches its quota, grading switches to the next.
 - Per-question status, strengths, expected answer, an overall review, weak topics and study recommendations.
@@ -37,28 +37,10 @@ It comes with a web app (FastAPI) and a command-line script. A Streamlit version
 │   ├── database.py    # ChromaDB storage and semantic search
 │   └── app.py         # Optional Streamlit app
 └── README.md
-=======
-Grades handwritten answer sheets with Gemini. Upload a question paper PDF and a student's answer sheet PDF; the app transcribes each answer, awards marks, writes feedback, and stores the result in ChromaDB for review and semantic search. Use it through the web app or the original command-line script.
-
-## Structure
-
-```
-.
-├── main.py            # CLI entry point
-├── server.py          # FastAPI server and JSON API
-├── static/index.html  # Web UI (single file, no build step)
-├── src/
-│   ├── ingest.py      # PDF -> images (pdf2image)
-│   ├── ai.py          # Gemini grading with structured output and retries
-│   ├── models.py      # Pydantic schemas
-│   └── database.py    # ChromaDB storage, listing, search
-└── requirements.txt
->>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 ```
 
-## Setup
+## Requirements
 
-<<<<<<< HEAD
 - Python 3.11+
 - [Poppler](https://poppler.freedesktop.org/) (required by `pdf2image`)
   - macOS: `brew install poppler`
@@ -67,14 +49,10 @@ Grades handwritten answer sheets with Gemini. Upload a question paper PDF and a 
 - One or more Gemini API keys from [Google AI Studio](https://aistudio.google.com/)
 
 ## Installation
-=======
-Requires Python 3.10+, [Poppler](https://poppler.freedesktop.org/) (`brew install poppler` or `sudo apt install poppler-utils`; on Windows add its `bin` folder to `PATH`), and a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
->>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 
 With [uv](https://docs.astral.sh/uv/) (the project includes a `uv.lock`):
 
 ```bash
-<<<<<<< HEAD
 git clone <your-repo-url>
 cd <your-repo-folder>
 uv sync
@@ -97,9 +75,22 @@ uvicorn server:app --reload      # with uv: uv run uvicorn server:app --reload
 Open http://127.0.0.1:8000.
 
 1. Open the **API keys** tab and add at least one Gemini key (or set `GEMINI_API_KEY`, see below).
-2. Open the **Grade** tab, upload the question paper and the answer sheet, and click **Grade answer sheet**.
-3. Grading can take a minute or more for handwriting.
+2. Open the **Grade** tab, upload the question paper, then one or more answer sheet PDFs, and click **Grade**.
+3. Grading can take a minute or more per sheet for handwriting.
 4. Use **Submissions** to reopen past results and **Search** to find them by topic, mistake or phrase.
+
+## Grading several answer sheets
+
+Drop or choose multiple PDFs in the answer sheets box. You can add more files before you start, and remove any file from the queue.
+
+- Sheets are graded one at a time, in the order listed. Each result appears as soon as it finishes.
+- The queue shows each sheet as Queued, Grading, Done (with its score) or Failed (with the reason). A failed sheet does not stop the rest.
+- If every API key runs out of quota or fails, the batch pauses and the remaining sheets stay queued. Add or fix a key and press the grade button to continue.
+- **Stop after this sheet** ends the batch once the current sheet finishes. **Retry failed** requeues failed sheets.
+- With two or more sheets, a **Batch summary** shows each student's score and the class average, and lets you download all results as one CSV.
+- Saved submissions are keyed by roll number. If two sheets have the same roll number (or the model misreads one), the later one replaces the earlier one in the Submissions tab. The summary warns you when this happens.
+
+The question paper is converted again for each sheet, so large batches take a little longer than strictly necessary.
 
 ## API keys and automatic fallback
 
@@ -110,17 +101,11 @@ You can provide keys in two ways.
 **On the server.** Set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) before starting the server:
 
 ```bash
-=======
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
->>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 export GEMINI_API_KEY="your-api-key"
 ```
 
 ### How a key is chosen
 
-<<<<<<< HEAD
 Keys are tried in a fixed order: UI keys from top to bottom, then the server key last. The first key that succeeds is used, so key #1 handles every request while it works. Use the arrows in the API keys tab to change the priority.
 
 | Failure | What happens |
@@ -185,7 +170,7 @@ It uses a single key from the sidebar. It does not yet have multi-key fallback o
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Server key, Poppler and stored count |
-| POST | `/api/grade` | Grade a sheet. Form fields: `question_paper`, `answer_sheet`, `marking_scheme`, `dpi`, `api_keys` (JSON list of keys in priority order) |
+| POST | `/api/grade` | Grade one sheet (the UI calls it once per sheet). Form fields: `question_paper`, `answer_sheet`, `marking_scheme`, `dpi`, `api_keys` (JSON list of keys in priority order) |
 | POST | `/api/keys/test` | Check one key. Body: `{"key": "..."}` |
 | GET | `/api/submissions` | List stored submissions |
 | GET | `/api/submissions/{id}` | One full submission |
@@ -214,6 +199,7 @@ In the web app, edit the marking scheme box on the Grade tab. For the command-li
 
 - There is no answer key. Gemini decides the marks distribution from the question paper, so grading can vary between runs. Review results before using them for real marks.
 - The marks lost across a question's mistakes are requested to add up to the marks missed, but this is not verified in code.
+- Batch grading is sequential, not parallel, and runs from the open browser tab. Closing the tab stops the batch.
 - Keys are used in priority order, not rotated evenly, so the first working key takes all the load.
 - Cooldowns cannot tell a per-minute limit from a daily one.
 - Each submission is stored as a single document, so semantic search is coarse.
@@ -222,7 +208,8 @@ In the web app, edit the marking scheme box on the Grade tab. For the command-li
 
 - Round-robin key rotation option
 - Per-key usage counters
-- Batch grading for multiple students
+- Parallel batch grading and a server-side job queue
+- Cache the converted question paper across a batch
 - Support a fixed rubric or answer key
 - Per-question documents in ChromaDB
 - PDF report export
@@ -232,49 +219,3 @@ In the web app, edit the marking scheme box on the Grade tab. For the command-li
 ## License
 
 Add a license of your choice.
-=======
-**Web app**
-
-```bash
-uvicorn server:app --reload
-```
-
-Open http://127.0.0.1:8000.
-
-- **Grade:** upload both PDFs, edit the marking scheme, choose a scan quality, and download the result as CSV or JSON.
-- **Submissions:** browse, reopen or delete past results.
-- **Search:** semantic search across stored submissions.
-
-The page flags results where Gemini's total doesn't match the sum of the question marks, or where a question is awarded more than its maximum.
-
-**Command line:** set `qp_pdf_path` and `answer_pdf_path` in `main.py`, then run `python main.py`.
-
-## API
-
-Interactive docs are served at `/docs`.
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Check API key, Poppler, and stored count |
-| `POST` | `/api/grade` | Form fields `question_paper`, `answer_sheet`, optional `marking_scheme`, `dpi` (100 to 300) |
-| `GET` | `/api/submissions` | List submissions |
-| `GET` / `DELETE` | `/api/submissions/{id}` | Fetch or delete one |
-| `POST` | `/api/search` | `{"query": "...", "n": 5}` |
-
-## Customizing the marking scheme
-
-Edit the box on the Grade page, or the `marking_scheme` string in `main.py` for the CLI.
-
-## Known limitations
-
-- No answer key: Gemini sets the marks distribution, so grading can vary between runs.
-- Totals are checked only in the web app.
-- One sheet at a time; re-grading a roll number overwrites it.
-- No login: run on a trusted machine or network only.
-- Only server errors are retried automatically.
-- Each submission is one ChromaDB document, so search is coarse.
-
-## Roadmap
-
-Batch grading, fixed rubric or answer key, per-question search documents, editable marks in the UI, scanned pages beside the transcription, authentication, tests.
->>>>>>> a06a623c55192878f805e9dabc8496fc89309597
