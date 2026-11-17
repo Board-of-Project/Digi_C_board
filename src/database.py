@@ -22,6 +22,10 @@ class StudentDatabase:
         full_text = f"Student Name: {submission.student_name}, Roll Number: {submission.roll_number}. "
         for eval_item in submission.evaluations:
             full_text += f"Q{eval_item.question_number}: {eval_item.transcribed_answer} (Marks: {eval_item.marks_awarded}/{eval_item.max_marks}) Feedback: {eval_item.feedback} "
+            for m in getattr(eval_item, "mistakes", None) or []:
+                full_text += f"Mistake ({m.mistake_type}): {m.why_wrong} Topic: {m.topic_to_revise}. "
+        if getattr(submission, "weak_topics", None):
+            full_text += "Weak topics: " + ", ".join(submission.weak_topics) + ". "
 
         metadata = {
             "student_name": submission.student_name or "Unknown",

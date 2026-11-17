@@ -4,6 +4,8 @@ Web server for the AI Exam Grader.
 Run:  uvicorn server:app --reload
 Open: http://127.0.0.1:8000
 """
+
+import json
 import os
 import re
 import shutil
@@ -16,9 +18,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from google.genai.errors import APIError
 from pydantic import BaseModel, Field
-from tenacity import RetryError
-
-from src.ai import evaluate_with_question_paper_pdf
+from src.ai import (
+    KeyPoolError,
+    NoKeysError,
+    evaluate_with_question_paper_pdf,
+    test_key,
+)
 from src.database import StudentDatabase
 from src.ingest import convert_pdf_to_images
 
@@ -50,6 +55,19 @@ def with_totals(data: dict) -> dict:
     return data
 
 
+def parse_keys(raw: str):
+    """api_keys form field: a JSON list of key strings, in priority order."""
+    if not (raw or "").strip():
+        return []
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "api_keys must be a JSON list of strings.")
+    if not isinstance(data, list) or not all(isinstance(k, str) for k in data):
+        raise HTTPException(400, "api_keys must be a JSON list of strings.")
+    return [k.strip() for k in data if k.strip()]
+
+
 def save_upload(upload: UploadFile, dest: str):
     if not (upload.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, f"'{upload.filename}' is not a PDF.")
@@ -66,13 +84,25 @@ def health():
     }
 
 
+class KeyTestRequest(BaseModel):
+    key: str = Field(min_length=1)
+
+
+@app.post("/api/keys/test")
+def keys_test(req: KeyTestRequest):
+    """Checks one key. The key is used for this call only and is never stored or logged."""
+    return test_key(req.key)
+
+
 @app.post("/api/grade")
 def grade(
     question_paper: UploadFile = File(...),
     answer_sheet: UploadFile = File(...),
     marking_scheme: str = Form(""),
     dpi: int = Form(200),
+    api_keys: str = Form(""),
 ):
+    keys = parse_keys(api_keys)
     dpi = max(100, min(dpi, 300))
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -90,25 +120,36 @@ def grade(
                 f"and that Poppler is installed. ({e})",
             )
 
+    report = []
     try:
         result = evaluate_with_question_paper_pdf(
-            qp_images, answer_images, marking_scheme.strip() or None
+            qp_images,
+            answer_images,
+            marking_scheme.strip() or None,
+            api_keys=keys,
+            key_report=report,
         )
-    except RetryError:
-        raise HTTPException(503, "Gemini is overloaded right now. Try again in a minute.")
+    except NoKeysError as e:
+        raise HTTPException(400, {"message": str(e), "key_report": []})
+    except KeyPoolError as e:
+        raise HTTPException(
+            429 if e.all_quota else 503,
+            {"message": str(e), "key_report": e.report},
+        )
     except APIError as e:
-        if getattr(e, "code", None) == 429:
-            raise HTTPException(429, "Gemini rate limit reached. Wait a moment and try again.")
-        raise HTTPException(502, f"Gemini returned an error: {e}")
+        raise HTTPException(
+            502, {"message": f"Gemini returned an error: {e}", "key_report": report}
+        )
     except Exception as e:
-        raise HTTPException(500, f"Grading failed: {e}")
-
-    if result is None:
-        raise HTTPException(502, "Gemini returned a response that could not be read. Try grading again.")
+        raise HTTPException(
+            500, {"message": f"Grading failed: {e}", "key_report": report}
+        )
 
     student_id = make_id(result.roll_number)
     db.store_submission(result, student_id=student_id)
-    return with_totals(db.get_submission(student_id))
+    data = with_totals(db.get_submission(student_id))
+    data["key_report"] = report  # which keys were tried; not stored
+    return data
 
 
 @app.get("/api/submissions")
