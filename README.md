@@ -1,5 +1,6 @@
 # AI Exam Grader
 
+<<<<<<< HEAD
 An AI-powered grading tool. It takes a question paper PDF and a student's handwritten answer sheet PDF, uses Gemini to read, transcribe and grade the answers, explains every mistake in detail, and stores each result in a ChromaDB vector database for later semantic search.
 
 It comes with a web app (FastAPI) and a command-line script. A Streamlit version is also included.
@@ -36,10 +37,28 @@ It comes with a web app (FastAPI) and a command-line script. A Streamlit version
 │   ├── database.py    # ChromaDB storage and semantic search
 │   └── app.py         # Optional Streamlit app
 └── README.md
+=======
+Grades handwritten answer sheets with Gemini. Upload a question paper PDF and a student's answer sheet PDF; the app transcribes each answer, awards marks, writes feedback, and stores the result in ChromaDB for review and semantic search. Use it through the web app or the original command-line script.
+
+## Structure
+
+```
+.
+├── main.py            # CLI entry point
+├── server.py          # FastAPI server and JSON API
+├── static/index.html  # Web UI (single file, no build step)
+├── src/
+│   ├── ingest.py      # PDF -> images (pdf2image)
+│   ├── ai.py          # Gemini grading with structured output and retries
+│   ├── models.py      # Pydantic schemas
+│   └── database.py    # ChromaDB storage, listing, search
+└── requirements.txt
+>>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 ```
 
-## Requirements
+## Setup
 
+<<<<<<< HEAD
 - Python 3.11+
 - [Poppler](https://poppler.freedesktop.org/) (required by `pdf2image`)
   - macOS: `brew install poppler`
@@ -48,10 +67,14 @@ It comes with a web app (FastAPI) and a command-line script. A Streamlit version
 - One or more Gemini API keys from [Google AI Studio](https://aistudio.google.com/)
 
 ## Installation
+=======
+Requires Python 3.10+, [Poppler](https://poppler.freedesktop.org/) (`brew install poppler` or `sudo apt install poppler-utils`; on Windows add its `bin` folder to `PATH`), and a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+>>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 
 With [uv](https://docs.astral.sh/uv/) (the project includes a `uv.lock`):
 
 ```bash
+<<<<<<< HEAD
 git clone <your-repo-url>
 cd <your-repo-folder>
 uv sync
@@ -87,11 +110,17 @@ You can provide keys in two ways.
 **On the server.** Set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) before starting the server:
 
 ```bash
+=======
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+>>>>>>> a06a623c55192878f805e9dabc8496fc89309597
 export GEMINI_API_KEY="your-api-key"
 ```
 
 ### How a key is chosen
 
+<<<<<<< HEAD
 Keys are tried in a fixed order: UI keys from top to bottom, then the server key last. The first key that succeeds is used, so key #1 handles every request while it works. Use the arrows in the API keys tab to change the priority.
 
 | Failure | What happens |
@@ -203,3 +232,49 @@ In the web app, edit the marking scheme box on the Grade tab. For the command-li
 ## License
 
 Add a license of your choice.
+=======
+**Web app**
+
+```bash
+uvicorn server:app --reload
+```
+
+Open http://127.0.0.1:8000.
+
+- **Grade:** upload both PDFs, edit the marking scheme, choose a scan quality, and download the result as CSV or JSON.
+- **Submissions:** browse, reopen or delete past results.
+- **Search:** semantic search across stored submissions.
+
+The page flags results where Gemini's total doesn't match the sum of the question marks, or where a question is awarded more than its maximum.
+
+**Command line:** set `qp_pdf_path` and `answer_pdf_path` in `main.py`, then run `python main.py`.
+
+## API
+
+Interactive docs are served at `/docs`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Check API key, Poppler, and stored count |
+| `POST` | `/api/grade` | Form fields `question_paper`, `answer_sheet`, optional `marking_scheme`, `dpi` (100 to 300) |
+| `GET` | `/api/submissions` | List submissions |
+| `GET` / `DELETE` | `/api/submissions/{id}` | Fetch or delete one |
+| `POST` | `/api/search` | `{"query": "...", "n": 5}` |
+
+## Customizing the marking scheme
+
+Edit the box on the Grade page, or the `marking_scheme` string in `main.py` for the CLI.
+
+## Known limitations
+
+- No answer key: Gemini sets the marks distribution, so grading can vary between runs.
+- Totals are checked only in the web app.
+- One sheet at a time; re-grading a roll number overwrites it.
+- No login: run on a trusted machine or network only.
+- Only server errors are retried automatically.
+- Each submission is one ChromaDB document, so search is coarse.
+
+## Roadmap
+
+Batch grading, fixed rubric or answer key, per-question search documents, editable marks in the UI, scanned pages beside the transcription, authentication, tests.
+>>>>>>> a06a623c55192878f805e9dabc8496fc89309597
